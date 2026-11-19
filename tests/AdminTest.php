@@ -124,6 +124,25 @@ final class AdminTest extends TestCase {
 	}
 
 	/**
+	 * Ending within the month: still active, and Renew beside Deactivate;
+	 * further off, no Renew.
+	 */
+	public function test_the_form_when_ending_soon(): void {
+		$updater = $this->register( [ 'renew_url' => 'https://store.example/renew' ] );
+
+		$this->state( $updater, 'active', [ 'expires_at' => time() + 10 * DAY_IN_SECONDS ] );
+
+		$form = $updater->form();
+
+		$this->assertStringContainsString( '>Deactivate Licence</button>', $form );
+		$this->assertStringContainsString( '>Renew Licence</a>', $form );
+
+		$this->state( $updater, 'active', [ 'expires_at' => time() + 60 * DAY_IN_SECONDS ] );
+
+		$this->assertStringNotContainsString( 'Renew Licence', $updater->form() );
+	}
+
+	/**
 	 * Each state has one line, in words.
 	 *
 	 * @param string $status The status.

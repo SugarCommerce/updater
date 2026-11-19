@@ -72,7 +72,10 @@ final class Admin {
 			$fields .= $this->button( 'activate', 'button button-primary', $embedded );
 		}
 
-		if ( 'expired' === $state['status'] ) {
+		// Run out, or running out: within the month the notices say so too.
+		$expiring = 'active' === $state['status'] && null !== $state['expires_at'] && (int) $state['expires_at'] - time() < Updater::EXPIRING;
+
+		if ( 'expired' === $state['status'] || $expiring ) {
 			$fields .= sprintf(
 				' <a class="button" href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
 				esc_url( (string) $updater->config( 'renew_url' ) ),

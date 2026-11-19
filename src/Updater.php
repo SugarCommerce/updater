@@ -499,8 +499,9 @@ final class Updater {
 	 *
 	 * A masked key and Deactivate while the licence is active here; a key
 	 * box and Activate otherwise; one line saying where the licence stands;
-	 * a Renew link when it has run out. It posts to admin-post.php and
-	 * comes back to the page it was on, with the outcome as a notice.
+	 * a Renew link when it has run out or ends within 30 days. It posts to
+	 * admin-post.php and comes back to the page it was on, with the outcome
+	 * as a notice.
 	 *
 	 * Inside another form -- a settings page -- pass `embedded`: the
 	 * fields are printed without a form of their own, and the buttons post

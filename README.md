@@ -170,7 +170,7 @@ message is a sentence for the person in front of it:
 `$updater->form()` returns the licence box: the key masked to its last four
 characters with Deactivate Licence while it is active here; a key box and
 Activate Licence otherwise; one line saying where the licence stands; and
-Renew Licence when it has expired. It posts to `admin-post.php`, checks the
+Renew Licence when it has expired or ends within 30 days. It posts to `admin-post.php`, checks the
 capability and a nonce before anything reaches the store, and goes back to
 the page it came from, where the outcome is shown as a notice.
 
