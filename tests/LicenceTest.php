@@ -394,6 +394,17 @@ final class LicenceTest extends TestCase {
 		$this->assertNull( $GLOBALS['up_options']['sugarcommerce_updater_seller']['latest'] );
 		$this->assertArrayNotHasKey( 'update_plugins', $GLOBALS['up_site'] );
 		$this->assertFalse( wp_next_scheduled( 'sugarcommerce_updater_check', [ 'seller' ] ) );
+
+		// WordPress checks for updates again straight after: the store is
+		// not asked, and the licence still reads as deactivated here, not
+		// as a seat released from elsewhere.
+		$GLOBALS['up_requests'] = [];
+		$this->store( [ 'latest' => self::answer( false, 'location_not_active' ) ] );
+
+		$this->assertSame( 'location_not_active', $updater->latest( true )->get_error_code() );
+		$this->assertSame( [], $GLOBALS['up_requests'] );
+		$this->assertSame( 'deactivated', $updater->state()['reason'] );
+		$this->assertArrayNotHasKey( 'released', $updater->notices() );
 	}
 
 	/**

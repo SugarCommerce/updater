@@ -144,7 +144,9 @@ Everything is kept in one option that is not loaded on every page,
 says about a key is kept -- a key it does not know stays in the box to be
 corrected -- while an answer about the request (`busy`, too many requests,
 a store that cannot be reached) changes nothing. Deactivating keeps the key,
-so activating again is one click.
+so activating again is one click, and the store is not asked about updates
+until it is -- so a site deactivated on purpose is never told its seat was
+released elsewhere.
 
 Every error is a `WP_Error` whose code is the store's reason and whose
 message is a sentence for the person in front of it:

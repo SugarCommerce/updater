@@ -431,7 +431,8 @@ final class Updater {
 	 * The store's answer as it came: `version`, `update`, `changelog`,
 	 * `package` and the rest. A licence the store will not update -- run
 	 * out, taken away, not active here -- is the error saying so, and is
-	 * kept as the licence's state too.
+	 * kept as the licence's state too. Deactivated here, the store is not
+	 * asked.
 	 *
 	 * @param bool $force Ask the store even when an answer is kept.
 	 *
@@ -442,6 +443,13 @@ final class Updater {
 
 		if ( '' === $key ) {
 			return $this->error( 'no_key' );
+		}
+
+		// Deactivated here on purpose: there is no seat to update, and the
+		// store would only say so -- which, kept, would read as the seat
+		// having been taken away elsewhere.
+		if ( 'deactivated' === $this->state()['reason'] ) {
+			return $this->error( 'location_not_active' );
 		}
 
 		$stored = $this->stored();
