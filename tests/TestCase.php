@@ -43,8 +43,9 @@ abstract class TestCase extends Base {
 				[
 					'file'    => self::FILE,
 					'version' => '1.0.0',
-					'store'   => 'https://store.example',
-					'product' => 'seller-pro',
+					'store'    => 'https://store.example',
+					'product'  => 'seller-pro',
+					'resolver' => 'updater_test_resolve',
 				],
 				$config
 			)

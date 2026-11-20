@@ -106,6 +106,7 @@ wordpress.org free to answer for the same folder name.
 | `cache` | `21600` (six hours) | How long the store's update answer is kept, at most twelve hours |
 | `labels` | | Words to replace; see [Words](#words) |
 | `notices` | `true` | Whether to show the licence notices |
+| `resolver` | DNS | `fn( string $host ): string[]`, every address a host resolves to. For tests |
 
 `register()` throws an `InvalidArgumentException` when a required key is
 missing, `store` is not an https address, or `namespace` is not a REST
@@ -404,7 +405,7 @@ What each rule defends against:
 
 * **The key is never printed in full** -- masked to its last four in the box, the placeholder and the REST answer -- so other admins, page caches and screenshots never see it.
 * **The key goes only to an https store** with a plain host and no credentials in the address (`register()` refuses anything else), so it never crosses the wire in the clear.
-* **Every address the store's host resolves to must be public** (`IP::is_public()`, A and AAAA, NAT64/6to4 judged by the IPv4 inside), the connection is pinned to the checked address and redirects are not followed, so a store address cannot be turned on the cloud metadata service or the internal network.
+* **Every address the store's host resolves to must be public** (`IP::is_public()`, A and AAAA, NAT64/6to4 judged by the IPv4 inside), the connection is pinned to the checked address and redirects are not followed, so a store address cannot be turned on the cloud metadata service or the internal network. The guard is `sugarcommerce/network`'s `Remote\SafeUrl` (https only, the site's own host allowed as core allows it, never a metadata or link-local address).
 * **The store's answer is untrusted**: JSON checked with `json_validate()` and decoded to arrays only, capped at 1 MB, `reason` a lower-case word, versions version-shaped, display links http(s), text plain -- and every key the library does not know dropped before it is kept or used.
 * **Downloads come only over https from the store's own host and port**, with no credentials in the link, so a store taken over cannot point one-click and automatic updates at a package elsewhere.
 * **Activation is limited** to ten tries a quarter of an hour per plugin, so the box cannot be used to guess keys through the site.
@@ -418,7 +419,7 @@ What each rule defends against:
 | `src/Updater.php` | The one class a plugin uses; its jobs are traits in `src/Traits/Updater/` |
 | `src/Admin.php`, `src/Updates.php` | The box, notices and row (traits in `src/Traits/Admin/`); what WordPress is told about new versions |
 | `src/Rest/` | The box's REST routes |
-| `src/Store/` | Asking the store (`Client`), safely (`Guard`), and reading its answer (`Reader`) |
+| `src/Store/` | Asking the store (`Client`, through network's `SafeUrl`) and reading its answer (`Reader`) |
 | `src/Models/` | Shapes only: `Answer`, `Release`, `Licence`, `Status` |
 | `assets/js/`, `assets/build/` | The box's script, and its committed build |
 

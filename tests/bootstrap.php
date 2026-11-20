@@ -61,7 +61,17 @@ function updater_test_reset(): void {
 	unset( $GLOBALS['wp_list_table'] );
 
 	SugarCommerce\Updater\Updater::reset();
-	SugarCommerce\Updater\Store\Guard::resolve_with( static fn( string $host ): array => $GLOBALS['up_dns'][ strtolower( $host ) ] ?? ( false !== filter_var( $host, FILTER_VALIDATE_IP ) ? [ $host ] : [] ) );
+}
+
+/**
+ * DNS in tests: the table in up_dns; an IP literal is itself.
+ *
+ * @param string $host A host.
+ *
+ * @return string[]
+ */
+function updater_test_resolve( string $host ): array {
+	return $GLOBALS['up_dns'][ strtolower( $host ) ] ?? ( false !== filter_var( $host, FILTER_VALIDATE_IP ) ? [ $host ] : [] );
 }
 
 if ( ! class_exists( 'WP_Error' ) ) {
@@ -237,7 +247,7 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 	}
 }
 
-// What the Guard calls: core's own safe variant, here the same as the plain
+// What network's SafeUrl calls: core's own safe variant, here the same as the plain
 // one, with the arguments it was given remembered.
 if ( ! function_exists( 'wp_safe_remote_post' ) ) {
 	function wp_safe_remote_post( $url, $args = [] ) {
@@ -250,6 +260,12 @@ if ( ! function_exists( 'wp_safe_remote_post' ) ) {
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $thing ) {
 		return $thing instanceof WP_Error;
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_header' ) ) {
+	function wp_remote_retrieve_header( $response, $header ) {
+		return is_array( $response ) ? (string) ( array_change_key_case( (array) ( $response['headers'] ?? [] ) )[ strtolower( $header ) ] ?? '' ) : '';
 	}
 }
 

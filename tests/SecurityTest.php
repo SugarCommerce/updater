@@ -13,7 +13,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
-use SugarCommerce\Updater\Store\Guard;
+use SugarCommerce\Updater\Store\Client;
 use SugarCommerce\Updater\Updater;
 
 /**
@@ -114,6 +114,8 @@ final class SecurityTest extends TestCase {
 			'a query'        => [ 'https://store.example/?x=1' ],
 			'an odd host'    => [ 'https://store%2eexample' ],
 			'another scheme' => [ 'ftp://store.example' ],
+			'metadata'       => [ 'https://metadata.google.internal' ],
+			'a bare number'  => [ 'https://2852039166' ],
 		];
 	}
 
@@ -122,9 +124,12 @@ final class SecurityTest extends TestCase {
 	 * to the address since.
 	 */
 	public function test_the_guard_refuses_what_is_not_a_store_address(): void {
-		$this->assertNotNull( Guard::refuse( 'http://store.example/wp-json/sugarcart/v1/licenses/activate' ) );
-		$this->assertNotNull( Guard::refuse( 'https://me@store.example/wp-json/sugarcart/v1/licenses/activate' ) );
-		$this->assertNull( Guard::refuse( 'https://store.example/wp-json/sugarcart/v1/licenses/activate' ) );
+		$guard = ( new Client( $this->register() ) )->guard();
+
+		$this->assertNotNull( $guard->refuse( 'http://store.example/wp-json/sugarcart/v1/licenses/activate' ) );
+		$this->assertNotNull( $guard->refuse( 'https://me@store.example/wp-json/sugarcart/v1/licenses/activate' ) );
+		$this->assertNotNull( $guard->refuse( 'https://metadata.google.internal/wp-json/sugarcart/v1/licenses/activate' ) );
+		$this->assertNull( $guard->refuse( 'https://store.example/wp-json/sugarcart/v1/licenses/activate' ) );
 	}
 
 	/**

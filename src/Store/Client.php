@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Updater\Store;
 
+use SugarCommerce\Network\Remote\SafeUrl;
 use SugarCommerce\Updater\Models\Answer;
 use SugarCommerce\Updater\Updater;
 use WP_Error;
@@ -26,8 +27,10 @@ use WP_Error;
  * the store could not be reached, did not answer in its own shape, or
  * refused the request itself (too many, or a field missing).
  *
- * The request goes through the Guard (https, a public host, pinned, no
- * redirects); the answer through the Reader (only keys it can check).
+ * The request goes through sugarcommerce/network's SafeUrl (https, every
+ * address the host resolves to public -- the site's own host excepted, as
+ * core's own check makes it -- pinned, no redirects, never a metadata
+ * service); the answer through the Reader (only keys it can check).
  *
  * Part of Updater; not meant to be used on its own.
  */
@@ -55,12 +58,29 @@ final class Client {
 	private Reader $reader;
 
 	/**
+	 * Guards every request to the store.
+	 *
+	 * @var SafeUrl
+	 */
+	private SafeUrl $guard;
+
+	/**
 	 * Set up.
 	 *
 	 * @param Updater $updater The plugin asking.
 	 */
 	public function __construct( private Updater $updater ) {
 		$this->reader = new Reader( (string) $updater->config( 'store' ) );
+		$this->guard  = new SafeUrl( resolver: $updater->config( 'resolver' ), https_only: true, own_host: true );
+	}
+
+	/**
+	 * The guard every request to this plugin's store goes through.
+	 *
+	 * @return SafeUrl
+	 */
+	public function guard(): SafeUrl {
+		return $this->guard;
 	}
 
 	/**
@@ -99,7 +119,7 @@ final class Client {
 		 */
 		$args = (array) apply_filters( $this->updater->hook_name( 'request' ), $args, $action, $this->updater );
 
-		$answer = $this->read( Guard::post( $this->updater->endpoint( $action ), $args ) );
+		$answer = $this->read( $this->guard->post( $this->updater->endpoint( $action ), $args ) );
 
 		/**
 		 * Filter the store's answer, or the error it amounted to.
@@ -120,7 +140,7 @@ final class Client {
 	/**
 	 * Read an HTTP response as the store's answer.
 	 *
-	 * @param array|WP_Error $response From the Guard.
+	 * @param array|WP_Error $response From the guard.
 	 *
 	 * @return array|WP_Error The answer, checked, as an array.
 	 */

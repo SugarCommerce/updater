@@ -13,8 +13,8 @@ declare( strict_types=1 );
 namespace SugarCommerce\Updater\Traits\Updater;
 
 use InvalidArgumentException;
+use SugarCommerce\Network\Remote\SafeUrl;
 use SugarCommerce\Updater\Rest\Controller;
-use SugarCommerce\Updater\Store\Guard;
 use SugarCommerce\Updater\Updater;
 
 /**
@@ -143,7 +143,7 @@ trait Setup {
 		$store = untrailingslashit( trim( (string) $config['store'] ) );
 
 		// The key is sent there: over https, to a plain host, nowhere else.
-		if ( ! Guard::is_store_address( $store ) ) {
+		if ( ! self::is_store_address( $store ) ) {
 			throw new InvalidArgumentException( 'Updater::register() needs "store" to be the https address of the store.' );
 		}
 
@@ -178,6 +178,26 @@ trait Setup {
 			'cache'        => max( MINUTE_IN_SECONDS, min( Updater::CACHE_LIMIT, $cache ) ),
 			'labels'       => (array) ( $config['labels'] ?? [] ),
 			'notices'      => (bool) ( $config['notices'] ?? true ),
+			'resolver'     => is_callable( $config['resolver'] ?? null ) ? $config['resolver'] : null,
 		];
+	}
+
+	/**
+	 * Whether an address is one a store may have: https, a plain host that
+	 * is not a metadata service, no credentials, no query or fragment. No
+	 * DNS: what register() can say before anything is asked.
+	 *
+	 * @param string $url The address.
+	 *
+	 * @return bool
+	 */
+	private static function is_store_address( string $url ): bool {
+		if ( null !== ( new SafeUrl( https_only: true ) )->malformed( $url ) ) {
+			return false;
+		}
+
+		$parts = (array) wp_parse_url( $url );
+
+		return ! isset( $parts['query'] ) && ! isset( $parts['fragment'] );
 	}
 }
