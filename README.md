@@ -18,7 +18,7 @@ can use it.
 
 ## Features
 
-* Add a licence key box, with Activate and Deactivate, to any settings page -- or under the plugin on the Plugins screen
+* Add a licence key box, with Activate and Deactivate, to any settings page -- or under the plugin on the Plugins screen -- that works in place with JavaScript and as a plain form without
 * Offer new versions from your store, with the download link only a good licence gets
 * Fill the "View details" window: description, changelog, requirements, banners and icons
 * Keep wordpress.org out of it with an `Update URI` header on your store's host
@@ -92,14 +92,14 @@ wordpress.org free to answer for the same folder name.
 |---|---|---|
 | `file` | (required) | The plugin's main file, `__FILE__` |
 | `version` | (required) | The version installed |
-| `store` | (required) | The store's address |
+| `store` | (required) | The store's https address |
 | `product` | (required) | The store's product id or slug |
 | `slug` | the plugin's folder | What the plugin is known by; the registry key |
 | `name` | the `Plugin Name` header | Used in notices and the "View details" window |
 | `description` | the `Description` header | The "View details" window's Description tab |
-| `namespace` | `sugarcart/v1` | The store's REST namespace |
+| `namespace` | `sugarcart/v1` | The store's REST namespace, like `sugarcart/v1` |
 | `prefix` | `sugarcommerce_updater` | What hooks and the option are named from |
-| `capability` | `manage_options` | Who sees the form, the notices and the row, and may use them |
+| `capability` | `activate_plugins` | Who sees the form, the notices and the row, and may use them (and the REST routes) |
 | `renew_url` | the store | Where Renew Licence goes |
 | `account_url` | the store | Where View Your Account goes, for a revoked key |
 | `settings_url` | the Plugins screen | Where the licence box lives |
@@ -108,8 +108,9 @@ wordpress.org free to answer for the same folder name.
 | `notices` | `true` | Whether to show the licence notices |
 
 `register()` throws an `InvalidArgumentException` when a required key is
-missing, so a plugin that forgot one finds out on its author's screen. A slug
-registered twice is the first registration.
+missing, `store` is not an https address, or `namespace` is not a REST
+namespace, so a plugin that got one wrong finds out on its author's screen. A
+slug registered twice is the first registration.
 
 ```php
 Updater::get( 'my-plugin' );   // the registered plugin, or null
@@ -122,6 +123,7 @@ Updater::all();                // every one, by slug
 $updater->key();                  // the key as entered, '' when none
 $updater->state();                // what the store last said
 $updater->activate( $key );       // true, or a WP_Error saying why not
+$updater->activate();             // ... with the key kept here, after Deactivate
 $updater->deactivate();           // true, or a WP_Error
 $updater->check();                // ask the store now, keep and return the state
 $updater->latest();               // the newest version, kept for `cache` seconds
@@ -141,8 +143,8 @@ $updater->latest( true );         // ... asked for again
 
 Everything is kept in one option that is not loaded on every page,
 `{prefix}_{slug}` with the slug's hyphens as underscores. Whatever the store
-says about a key is kept -- a key it does not know stays in the box to be
-corrected -- while an answer about the request (`busy`, too many requests,
+says about a key is kept -- a key it does not know stays, shown as its last
+four characters, to be corrected -- while an answer about the request (`busy`, too many requests,
 a store that cannot be reached) changes nothing. Deactivating keeps the key,
 so activating again is one click, and the store is not asked about updates
 until it is -- so a site deactivated on purpose is never told its seat was
@@ -161,6 +163,7 @@ message is a sentence for the person in front of it:
 | `busy` | The store is busy with another activation of this licence. Try again in a moment. |
 | `not_active` | The licence could not be activated on this site. Try again, or contact the store. |
 | `too_many_requests` | The store has had too many requests from this server. Try again in a minute. |
+| `too_many_attempts` | That is a lot of tries at activating this licence. Wait a few minutes, then try again. |
 | `key_required` | Enter a licence key first. |
 | `product_required`, `location_required` | The store could not tell which product / site this is. Contact the plugin's author. |
 | `no_key` | There is no licence key on this site yet. |
@@ -171,10 +174,16 @@ message is a sentence for the person in front of it:
 
 `$updater->form()` returns the licence box: the key masked to its last four
 characters with Deactivate Licence while it is active here; a key box and
-Activate Licence otherwise; one line saying where the licence stands; and
-Renew Licence when it has expired or ends within 30 days. It posts to `admin-post.php`, checks the
-capability and a nonce before anything reaches the store, and goes back to
-the page it came from, where the outcome is shown as a notice.
+Activate Licence otherwise (empty, with the key kept as its last four for a
+placeholder -- left empty, Activate uses that key); one line saying where the
+licence stands; and Renew Licence when it has expired or ends within 30 days.
+
+With JavaScript the buttons ask the REST routes below through `wp.apiFetch`
+(which renews a nonce that ran out while the page was open), the box is
+redrawn in place and the outcome is said in it. Without, the box is a form
+that posts to `admin-post.php`, checks the capability and a nonce before
+anything reaches the store, and goes back to the page it came from, where the
+outcome is shown as a notice.
 
 Inside another form -- a settings page posting to `options.php` -- pass
 `embedded`, so it prints no form of its own and its buttons post themselves:
@@ -185,6 +194,20 @@ echo $updater->form( [ 'embedded' => true ] );
 
 The fields are named from `$updater->id()` (`{prefix}_{slug}`): `{id}_key`,
 `{id}_do` and `{id}_nonce`, and admin-post.php's action is `{id}_license`.
+
+### The REST routes
+
+The box's script uses these; so can anything else signed in with the
+`capability`. The namespace is named for the build (`SugarCommerce\Plugin\Build`):
+`sugarcommerce-updater/v1` unprefixed, `{build}-sugarcommerce-updater/v1` in a
+plugin's Strauss copy, so two plugins bundling the library never answer for
+each other.
+
+| Route | Sent | Answer |
+|---|---|---|
+| `GET /licences/{slug}` | `embedded?` | `licence` (the state, and `key` as its last four), `html` (the box) |
+| `POST /licences/{slug}/activate` | `key?` (empty: the key kept), `embedded?` | `ok`, `code`, `type`, `message`, `licence`, `html`; 429 after too many tries |
+| `POST /licences/{slug}/deactivate` | `embedded?` | the same |
 
 ## Updates
 
@@ -241,7 +264,9 @@ set one), and is given the `Updater` it is about.
 ### `{prefix}_request`
 
 Filter a request before it is sent: `( array $args, string $action, Updater $updater )`.
-`$action` is `activate`, `validate`, `deactivate` or `latest`.
+`$action` is `activate`, `validate`, `deactivate` or `latest`. The body carries
+the licence key: log the action, never the body. Redirects stay off whatever
+the filter returns.
 
 ```php
 add_filter( 'myplugin_request', function ( array $args, string $action ) {
@@ -362,7 +387,8 @@ the key alone, sent as a form:
 Every well-formed request is answered 200 with
 `{ ok, reason, license: { status, expires_at, activations, max, product_id, test } }`,
 and `latest` adds `version`, `update`, `changelog`, `files` and `package`. A
-SugarCart store answers exactly this; any other store can, too.
+SugarCart store answers exactly this; any other store can, too. Keys beyond
+these are dropped (see [Security](#security)).
 
 ## Two plugins on one site
 
@@ -372,28 +398,29 @@ weekly event's argument. Two plugins bundling this library -- or one plugin
 with three paid add-ons, each registered -- never share a key, a cache or a
 notice. Give each plugin its own `prefix` when its hooks should be its own.
 
-## Moving from EDD_SL_Plugin_Updater / EDD_License
+## Security
 
-| EDD | Here |
+What each rule defends against:
+
+* **The key is never printed in full** -- masked to its last four in the box, the placeholder and the REST answer -- so other admins, page caches and screenshots never see it.
+* **The key goes only to an https store** with a plain host and no credentials in the address (`register()` refuses anything else), so it never crosses the wire in the clear.
+* **Every address the store's host resolves to must be public** (`IP::is_public()`, A and AAAA, NAT64/6to4 judged by the IPv4 inside), the connection is pinned to the checked address and redirects are not followed, so a store address cannot be turned on the cloud metadata service or the internal network.
+* **The store's answer is untrusted**: JSON checked with `json_validate()` and decoded to arrays only, capped at 1 MB, `reason` a lower-case word, versions version-shaped, display links http(s), text plain -- and every key the library does not know dropped before it is kept or used.
+* **Downloads come only over https from the store's own host and port**, with no credentials in the link, so a store taken over cannot point one-click and automatic updates at a package elsewhere.
+* **Activation is limited** to ten tries a quarter of an hour per plugin, so the box cannot be used to guess keys through the site.
+* **Every write is checked**: the form for the capability and its nonce, the REST routes for a signed-in user, the capability and the REST nonce; the store's own words never reach the page, only the plugin's labels.
+* **Nothing is unserialized**, and no secret is compared by hand -- nonces are WordPress's (`wp_verify_nonce()`, which is timing-safe).
+
+## Layout
+
+| Folder | |
 |---|---|
-| `new EDD_SL_Plugin_Updater( $store_url, __FILE__, [ 'version', 'license', 'item_id', 'author' ] )` | `Updater::register( [ 'file' => __FILE__, 'version', 'store', 'product' ] )`; the key is the one entered, not passed in |
-| `new EDD_License( __FILE__, $item_name, $version, $author )` | the same `register()` call |
-| `item_id` / `item_name` | `product`: the store's product id or slug |
-| `edd_action=activate_license` | `$updater->activate( $key )` |
-| `edd_action=deactivate_license` | `$updater->deactivate()` |
-| `edd_action=check_license` | `$updater->check()` |
-| `edd_action=get_version` | `$updater->latest()` |
-| `license` `valid` / `expired` / `revoked` / `disabled` / `invalid` / `site_inactive` | `state()['status']` `active` / `expired` / `revoked` / `revoked` / `invalid` / `inactive` |
-| `error` `no_activations_left` / `missing` / `item_name_mismatch` | reason `limit_reached` / `not_found` / `not_found` |
-| `{plugin}_license_key` and `{plugin}_license_active` options | one option, `{prefix}_{slug}` |
-| the field on EDD's Extensions / Licenses tab | `$updater->form()` wherever you like, or the row on the Plugins screen |
-| `in_plugin_update_message-{file}` "licence missing" | the plugin row and the `missing` notice |
-| `edd_weekly_scheduled_events` licence check | `{prefix}_check`, weekly |
-| `edd_sl_plugin_updater_api_params`, `edd_sl_api_request_verify_ssl` | `{prefix}_request` |
-| `show_changelog` / `edd_sl_changelog` | the "View details" window's Changelog tab |
-| an hour's pause after a failed request (`edd_sl_failed_http_*`) | the same, kept in the plugin's option |
-| `wp_override` | not needed: an `Update URI` on the store's host keeps wordpress.org out |
-| `beta` | not offered: the store has one version of each product |
+| `src/Updater.php` | The one class a plugin uses; its jobs are traits in `src/Traits/Updater/` |
+| `src/Admin.php`, `src/Updates.php` | The box, notices and row (traits in `src/Traits/Admin/`); what WordPress is told about new versions |
+| `src/Rest/` | The box's REST routes |
+| `src/Store/` | Asking the store (`Client`), safely (`Guard`), and reading its answer (`Reader`) |
+| `src/Models/` | Shapes only: `Answer`, `Release`, `Licence`, `Status` |
+| `assets/js/`, `assets/build/` | The box's script, and its committed build |
 
 ## Requirements
 

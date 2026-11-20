@@ -1,0 +1,25 @@
+{
+  "name": "@sugarcommerce/updater",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The licence box's script -- Activate and Deactivate through the REST route, the box redrawn in place -- built to assets/build with @wordpress/scripts.",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "build": "wp-scripts build licence=./assets/js/licence.js --output-path=assets/build",
+    "start": "wp-scripts start licence=./assets/js/licence.js --output-path=assets/build",
+    "test:js": "wp-scripts test-unit-js",
+    "lint:js": "wp-scripts lint-js assets/js tests/js",
+    "format:js": "wp-scripts format assets/js tests/js"
+  },
+  "devDependencies": {
+    "@wordpress/api-fetch": "^8.1.0",
+    "@wordpress/scripts": "~37.1.0",
+    "globals": "^16.5.0",
+    "jsdom": "~30.1.3",
+    "vite": "~8.1.7",
+    "vitest": "~5.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

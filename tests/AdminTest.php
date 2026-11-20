@@ -108,7 +108,8 @@ final class AdminTest extends TestCase {
 	}
 
 	/**
-	 * Expired: the key in the box to activate again, and a Renew link.
+	 * Expired: the key kept shown as its last four, never in full, and a
+	 * Renew link.
 	 */
 	public function test_the_form_when_expired(): void {
 		$updater = $this->register( [ 'renew_url' => 'https://store.example/renew' ] );
@@ -117,7 +118,8 @@ final class AdminTest extends TestCase {
 
 		$form = $updater->form();
 
-		$this->assertStringContainsString( 'value="KEY-1234-ABCD"', $form );
+		$this->assertStringNotContainsString( 'KEY-1234', $form );
+		$this->assertStringContainsString( 'value="" placeholder="•••••••••ABCD"', $form );
 		$this->assertStringContainsString( 'href="https://store.example/renew"', $form );
 		$this->assertStringContainsString( '>Renew Licence</a>', $form );
 		$this->assertStringContainsString( 'Expired on 1 January 2025.', $form );

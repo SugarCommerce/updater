@@ -22,6 +22,9 @@ define( 'HOUR_IN_SECONDS', 3600 );
 define( 'DAY_IN_SECONDS', 86400 );
 define( 'WEEK_IN_SECONDS', 604800 );
 
+// Checked out as on the workbench: wp-content/plugins/libraries/sugarcommerce/updater.
+define( 'WP_CONTENT_DIR', dirname( __DIR__, 5 ) );
+
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 
 /**
@@ -36,12 +39,19 @@ function updater_test_reset(): void {
 	$GLOBALS['up_requests']    = [];
 	$GLOBALS['up_cron']        = [];
 	$GLOBALS['up_deactivate']  = [];
-	$GLOBALS['up_can']         = [ 'manage_options' => true ];
+	$GLOBALS['up_can']         = [ 'activate_plugins' => true ];
 	$GLOBALS['up_user']        = 1;
 	$GLOBALS['up_admin']       = true;
 	$GLOBALS['up_environment'] = 'production';
 	$GLOBALS['up_redirect']    = null;
 	$GLOBALS['up_screen']      = null;
+	$GLOBALS['up_logged_in']   = true;
+	$GLOBALS['up_scripts']     = [];
+	$GLOBALS['up_routes']      = [];
+	$GLOBALS['up_dns']         = [
+		'store.example' => [ '93.184.216.34' ],
+		'site.test'     => [ '127.0.0.1' ],
+	];
 	$GLOBALS['pagenow']        = 'index.php';
 
 	$_GET    = [];
@@ -51,6 +61,7 @@ function updater_test_reset(): void {
 	unset( $GLOBALS['wp_list_table'] );
 
 	SugarCommerce\Updater\Updater::reset();
+	SugarCommerce\Updater\Store\Guard::resolve_with( static fn( string $host ): array => $GLOBALS['up_dns'][ strtolower( $host ) ] ?? ( false !== filter_var( $host, FILTER_VALIDATE_IP ) ? [ $host ] : [] ) );
 }
 
 if ( ! class_exists( 'WP_Error' ) ) {
@@ -86,6 +97,18 @@ if ( ! function_exists( 'add_filter' ) ) {
 if ( ! function_exists( 'add_action' ) ) {
 	function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
 		return add_filter( $hook, $callback, $priority, $accepted_args );
+	}
+}
+
+if ( ! function_exists( 'remove_action' ) ) {
+	function remove_action( $hook, $callback, $priority = 10 ) {
+		foreach ( $GLOBALS['up_hooks'][ $hook ][ (int) $priority ] ?? [] as $index => [ $registered ] ) {
+			if ( $registered === $callback ) {
+				unset( $GLOBALS['up_hooks'][ $hook ][ (int) $priority ][ $index ] );
+			}
+		}
+
+		return true;
 	}
 }
 
@@ -214,6 +237,16 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 	}
 }
 
+// What the Guard calls: core's own safe variant, here the same as the plain
+// one, with the arguments it was given remembered.
+if ( ! function_exists( 'wp_safe_remote_post' ) ) {
+	function wp_safe_remote_post( $url, $args = [] ) {
+		$args['reject_unsafe_urls'] = true;
+
+		return wp_remote_post( $url, $args );
+	}
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $thing ) {
 		return $thing instanceof WP_Error;
@@ -267,6 +300,12 @@ if ( ! function_exists( 'get_current_user_id' ) ) {
 if ( ! function_exists( 'current_user_can' ) ) {
 	function current_user_can( $capability, ...$args ) {
 		return ! empty( $GLOBALS['up_can'][ $capability ] );
+	}
+}
+
+if ( ! function_exists( 'is_user_logged_in' ) ) {
+	function is_user_logged_in() {
+		return (bool) $GLOBALS['up_logged_in'];
 	}
 }
 
@@ -452,6 +491,12 @@ if ( ! function_exists( 'wp_date' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_file_name' ) ) {
+	function sanitize_file_name( $name ) {
+		return (string) preg_replace( '/[^A-Za-z0-9._-]/', '', str_replace( ' ', '-', (string) $name ) );
+	}
+}
+
 if ( ! function_exists( 'wp_parse_args' ) ) {
 	function wp_parse_args( $args, $defaults = [] ) {
 		return array_merge( $defaults, is_array( $args ) ? $args : [] );
@@ -514,6 +559,84 @@ if ( ! function_exists( 'wp_get_admin_notice' ) ) {
 		do_action( 'wp_admin_notice', $message, $args );
 
 		echo wp_kses_post( wp_get_admin_notice( $message, $args ) );
+	}
+}
+
+// Scripts.
+
+if ( ! function_exists( 'content_url' ) ) {
+	function content_url( $path = '' ) {
+		return 'https://site.test/wp-content' . ( '' !== $path ? '/' . ltrim( (string) $path, '/' ) : '' );
+	}
+}
+
+if ( ! function_exists( 'site_url' ) ) {
+	function site_url( $path = '' ) {
+		return 'https://site.test' . ( '' !== $path ? '/' . ltrim( (string) $path, '/' ) : '' );
+	}
+}
+
+if ( ! function_exists( 'wp_register_script' ) ) {
+	function wp_register_script( $handle, $src, $deps = [], $ver = false, $args = [] ) {
+		$GLOBALS['up_scripts'][ $handle ] = [
+			'src'      => $src,
+			'deps'     => $deps,
+			'enqueued' => false,
+		];
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_script' ) ) {
+	function wp_enqueue_script( $handle ) {
+		$GLOBALS['up_scripts'][ $handle ]['enqueued'] = true;
+	}
+}
+
+if ( ! function_exists( 'wp_set_script_translations' ) ) {
+	function wp_set_script_translations( $handle, $domain = 'default', $path = '' ) {
+		return true;
+	}
+}
+
+// REST: enough of core's classes for the controller's callbacks.
+
+if ( ! function_exists( 'register_rest_route' ) ) {
+	function register_rest_route( $route_namespace, $route, $args = [], $override = false ) {
+		$GLOBALS['up_routes'][ '/' . $route_namespace . $route ] = $args;
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'rest_authorization_required_code' ) ) {
+	function rest_authorization_required_code() {
+		return is_user_logged_in() ? 403 : 401;
+	}
+}
+
+if ( ! class_exists( 'WP_REST_Server' ) ) {
+	class WP_REST_Server {
+		const READABLE  = 'GET';
+		const CREATABLE = 'POST';
+	}
+}
+
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+	class WP_REST_Request {
+		public function __construct( private array $params = [] ) {}
+		public function get_param( $key ) { return $this->params[ $key ] ?? null; }
+	}
+}
+
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+	class WP_REST_Response {
+		public array $headers = [];
+		public function __construct( public mixed $data = null, public int $status = 200 ) {}
+		public function get_data() { return $this->data; }
+		public function get_status() { return $this->status; }
+		public function header( $key, $value ) { $this->headers[ $key ] = $value; }
 	}
 }
 

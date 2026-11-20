@@ -10,8 +10,10 @@
 
 declare( strict_types=1 );
 
-namespace SugarCommerce\Updater;
+namespace SugarCommerce\Updater\Store;
 
+use SugarCommerce\Updater\Models\Answer;
+use SugarCommerce\Updater\Updater;
 use WP_Error;
 
 /**
@@ -24,6 +26,9 @@ use WP_Error;
  * the store could not be reached, did not answer in its own shape, or
  * refused the request itself (too many, or a field missing).
  *
+ * The request goes through the Guard (https, a public host, pinned, no
+ * redirects); the answer through the Reader (only keys it can check).
+ *
  * Part of Updater; not meant to be used on its own.
  */
 final class Client {
@@ -34,7 +39,20 @@ final class Client {
 	 * Long enough for a store on shared hosting, short enough that the
 	 * Plugins screen does not hang on one that is down.
 	 */
-	public const TIMEOUT = 15;
+	public const int TIMEOUT = 15;
+
+	/**
+	 * The most of an answer read, in bytes. A licence answer is a few
+	 * hundred; a `latest` with a long changelog a few dozen thousand.
+	 */
+	public const int MAX_BYTES = 1048576;
+
+	/**
+	 * Reads the store's answers.
+	 *
+	 * @var Reader
+	 */
+	private Reader $reader;
 
 	/**
 	 * Set up.
@@ -42,6 +60,16 @@ final class Client {
 	 * @param Updater $updater The plugin asking.
 	 */
 	public function __construct( private Updater $updater ) {
+		$this->reader = new Reader( (string) $updater->config( 'store' ) );
+	}
+
+	/**
+	 * The Reader for this plugin's store.
+	 *
+	 * @return Reader
+	 */
+	public function reader(): Reader {
+		return $this->reader;
 	}
 
 	/**
@@ -50,17 +78,20 @@ final class Client {
 	 * @param string               $action `activate`, `validate`, `deactivate` or `latest`.
 	 * @param array<string, mixed> $body   What to send.
 	 *
-	 * @return array|WP_Error The answer, with `ok` and `reason` always there.
+	 * @return Answer|WP_Error
 	 */
-	public function send( string $action, array $body ): array|WP_Error {
+	public function send( string $action, array $body ): Answer|WP_Error {
 		$args = [
-			'timeout' => self::TIMEOUT,
-			'headers' => [ 'Accept' => 'application/json' ],
-			'body'    => $body,
+			'timeout'             => self::TIMEOUT,
+			'headers'             => [ 'Accept' => 'application/json' ],
+			'body'                => $body,
+			'limit_response_size' => self::MAX_BYTES,
 		];
 
 		/**
 		 * Filter a request to the store before it is sent.
+		 *
+		 * The body carries the licence key: log the action, not the body.
 		 *
 		 * @param array   $args    wp_remote_post() arguments.
 		 * @param string  $action  `activate`, `validate`, `deactivate` or `latest`.
@@ -68,12 +99,12 @@ final class Client {
 		 */
 		$args = (array) apply_filters( $this->updater->hook_name( 'request' ), $args, $action, $this->updater );
 
-		$answer = $this->read( wp_remote_post( $this->updater->endpoint( $action ), $args ) );
+		$answer = $this->read( Guard::post( $this->updater->endpoint( $action ), $args ) );
 
 		/**
 		 * Filter the store's answer, or the error it amounted to.
 		 *
-		 * @param array|WP_Error $answer  The answer.
+		 * @param array|WP_Error $answer  The answer, as an array.
 		 * @param string         $action  `activate`, `validate`, `deactivate` or `latest`.
 		 * @param Updater        $updater The plugin asking.
 		 */
@@ -83,15 +114,15 @@ final class Client {
 			return $answer;
 		}
 
-		return is_array( $answer ) && is_string( $answer['reason'] ?? null ) ? $answer : $this->updater->error( 'unreachable' );
+		return $this->reader->answer( $answer ) ?? $this->updater->error( 'unreachable' );
 	}
 
 	/**
 	 * Read an HTTP response as the store's answer.
 	 *
-	 * @param array|WP_Error $response From wp_remote_post().
+	 * @param array|WP_Error $response From the Guard.
 	 *
-	 * @return array|WP_Error
+	 * @return array|WP_Error The answer, checked, as an array.
 	 */
 	private function read( array|WP_Error $response ): array|WP_Error {
 		if ( is_wp_error( $response ) ) {
@@ -99,22 +130,22 @@ final class Client {
 		}
 
 		$status = (int) wp_remote_retrieve_response_code( $response );
-		$answer = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		$body   = (string) wp_remote_retrieve_body( $response );
 
 		// Not the store's shape: a page that is not the API, a host's error
 		// page, a site that moved. All the same to the person waiting.
-		if ( ! is_array( $answer ) || ! isset( $answer['reason'] ) || ! is_string( $answer['reason'] ) ) {
+		$answer = json_validate( $body, 32 ) ? $this->reader->answer( json_decode( $body, true, 32 ) ) : null;
+
+		if ( null === $answer ) {
 			return $this->updater->error( 'unreachable' );
 		}
-
-		$answer['ok'] = ! empty( $answer['ok'] );
 
 		// A refusal of the request rather than an answer about the key:
 		// too many requests, or a field the store needed.
 		if ( 200 !== $status ) {
-			return $this->updater->error( $answer['reason'], $answer );
+			return $this->updater->error( $answer->reason, $answer->to_array() );
 		}
 
-		return $answer;
+		return $answer->to_array();
 	}
 }

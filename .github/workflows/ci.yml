@@ -112,6 +112,34 @@ jobs:
         # check, and a green build has to mean both.
         run: composer format:check
 
+      # A package with scripts to build keeps the build in assets/build,
+      # committed: Composer and Strauss copy a package as it is, with no
+      # install step. The build here must match what was committed.
+      - name: Set up Node
+        if: hashFiles(format('wp-content/plugins/libraries/sugarcommerce/{0}/package.json', github.event.repository.name)) != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: wp-content/plugins/libraries/sugarcommerce/${{ github.event.repository.name }}/package-lock.json
+
+      - name: JavaScript build
+        run: |
+          if [ ! -f package.json ]; then
+            echo 'No package.json: nothing to build.'
+            exit 0
+          fi
+
+          npm ci --no-audit --no-fund
+          npm run lint:js
+          npm run build
+
+          if [ -n "$(git status --porcelain -- assets/build)" ]; then
+            git status --short -- assets/build
+            echo '::error::assets/build is not what the sources build: run npm run build and commit it'
+            exit 1
+          fi
+
       - name: JavaScript tests
         # The PHP suite never executes a line of the scripts it ships.
         run: |

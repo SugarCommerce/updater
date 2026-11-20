@@ -83,6 +83,7 @@ final class Labels {
 			'error_busy'                => __( 'The store is busy with another activation of this licence. Try again in a moment.', 'sugarcommerce' ),
 			'error_not_active'          => __( 'The licence could not be activated on this site. Try again, or contact the store.', 'sugarcommerce' ),
 			'error_too_many_requests'   => __( 'The store has had too many requests from this server. Try again in a minute.', 'sugarcommerce' ),
+			'error_too_many_attempts'   => __( 'That is a lot of tries at activating this licence. Wait a few minutes, then try again.', 'sugarcommerce' ),
 			'error_key_required'        => __( 'Enter a licence key first.', 'sugarcommerce' ),
 			'error_product_required'    => __( 'The store could not tell which product this licence is for. Contact the plugin\'s author.', 'sugarcommerce' ),
 			'error_location_required'   => __( 'The store could not tell which site this is. Contact the plugin\'s author.', 'sugarcommerce' ),

@@ -20,6 +20,14 @@
 # Continuous integration
 /.github export-ignore
 
+# The scripts' toolchain. The sources (assets/js) and the build (assets/build)
+# ship; what builds and tests them does not.
+/node_modules export-ignore
+/package-lock.json export-ignore
+/vitest.config.mjs export-ignore
+/eslint.config.cjs export-ignore
+/.prettierrc.js export-ignore
+
 # Coding standards
 /phpcs.xml export-ignore
 /phpcs.xml.dist export-ignore

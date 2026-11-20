@@ -66,7 +66,7 @@ final class LicenceTest extends TestCase {
 		$this->assertSame( 'https://store.example', $updater->config( 'store' ) );
 		$this->assertSame( 'sugarcart/v1', $updater->config( 'namespace' ) );
 		$this->assertSame( 'sugarcommerce_updater', $updater->config( 'prefix' ) );
-		$this->assertSame( 'manage_options', $updater->config( 'capability' ) );
+		$this->assertSame( 'activate_plugins', $updater->config( 'capability' ) );
 		$this->assertSame( 'https://store.example', $updater->config( 'renew_url' ) );
 		$this->assertSame( 'https://site.test/wp-admin/plugins.php', $updater->settings_url() );
 		$this->assertSame( Updater::CACHE, $updater->config( 'cache' ) );

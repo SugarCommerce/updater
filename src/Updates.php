@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Updater;
 
+use SugarCommerce\Updater\Models\Release;
 use stdClass;
 
 /**
@@ -26,18 +27,13 @@ use stdClass;
  * which is what lets the auto-update toggle appear.
  *
  * Nothing is offered without a key, or when the store is down or says no.
+ * What is offered is the store's answer as Store\Reader let it through: a
+ * version that is a version, and a download link only when it is https on
+ * the store's own host.
  *
  * Part of Updater; not meant to be used on its own.
  */
 final class Updates {
-
-	/**
-	 * The keys of the store's answer passed through to WordPress as they
-	 * are, when the store sends them.
-	 *
-	 * @var string[]
-	 */
-	private const TEXT = [ 'requires', 'tested', 'requires_php', 'last_updated', 'upgrade_notice' ];
 
 	/**
 	 * Set up.
@@ -59,8 +55,8 @@ final class Updates {
 			return $transient;
 		}
 
-		$answer = $this->answer();
-		$update = null === $answer ? null : $this->update( $answer );
+		$release = $this->answer();
+		$update  = null === $release ? null : $this->update( $release );
 
 		if ( null === $update ) {
 			return $transient;
@@ -68,7 +64,7 @@ final class Updates {
 
 		$basename = $this->updater->basename();
 
-		if ( $this->newer( $answer ) ) {
+		if ( $this->newer( $release ) ) {
 			$transient->response[ $basename ] = $update;
 			unset( $transient->no_update[ $basename ] );
 		} else {
@@ -97,8 +93,8 @@ final class Updates {
 			return $update;
 		}
 
-		$answer = $this->answer();
-		$offer  = null === $answer ? null : $this->update( $answer );
+		$release = $this->answer();
+		$offer   = null === $release ? null : $this->update( $release );
 
 		return null === $offer ? $update : $offer;
 	}
@@ -123,28 +119,28 @@ final class Updates {
 			return $result;
 		}
 
-		$answer = $this->answer() ?? [];
-		$author = $this->updater->header( 'Author' );
-		$link   = $this->updater->header( 'AuthorURI' );
+		$release = $this->answer() ?? new Release();
+		$author  = $this->updater->header( 'Author' );
+		$link    = $this->updater->header( 'AuthorURI' );
 
 		$info = (object) [
-			'name'          => $this->text( $answer, 'name', $this->updater->name() ),
+			'name'          => $this->either( $release->name, $this->updater->name() ),
 			'slug'          => $this->updater->slug(),
-			'version'       => $this->text( $answer, 'version', $this->updater->version() ),
+			'version'       => $this->either( $release->version, $this->updater->version() ),
 			'author'        => '' !== $link && '' !== $author ? sprintf( '<a href="%s">%s</a>', esc_url( $link ), esc_html( $author ) ) : esc_html( $author ),
-			'homepage'      => esc_url_raw( $this->text( $answer, 'homepage', $this->homepage() ) ),
-			'sections'      => $this->sections( $answer ),
-			'download_link' => $this->package( $answer ),
-			'requires'      => $this->text( $answer, 'requires', $this->updater->header( 'RequiresWP' ) ),
-			'tested'        => $this->text( $answer, 'tested', '' ),
-			'requires_php'  => $this->text( $answer, 'requires_php', $this->updater->header( 'RequiresPHP' ) ),
-			'last_updated'  => $this->text( $answer, 'last_updated', '' ),
-			'banners'       => $this->images( $answer['banners'] ?? [] ),
-			'icons'         => $this->images( $answer['icons'] ?? [] ),
+			'homepage'      => esc_url_raw( $this->either( $release->homepage, $this->homepage() ) ),
+			'sections'      => $this->sections( $release ),
+			'download_link' => $release->package,
+			'requires'      => $this->either( $release->requires, $this->updater->header( 'RequiresWP' ) ),
+			'tested'        => $release->tested,
+			'requires_php'  => $this->either( $release->requires_php, $this->updater->header( 'RequiresPHP' ) ),
+			'last_updated'  => $release->last_updated,
+			'banners'       => $release->banners,
+			'icons'         => $release->icons,
 		];
 
-		if ( '' !== $this->text( $answer, 'upgrade_notice', '' ) ) {
-			$info->upgrade_notice = wp_kses_post( $this->text( $answer, 'upgrade_notice', '' ) );
+		if ( '' !== $release->upgrade_notice ) {
+			$info->upgrade_notice = wp_kses_post( $release->upgrade_notice );
 		}
 
 		/**
@@ -162,51 +158,50 @@ final class Updates {
 	 * The store's own word when it gave one -- it compares labels as well
 	 * as numbers -- and the version numbers otherwise.
 	 *
-	 * @param array $answer The store's answer.
+	 * @param Release $release The newest version.
 	 *
 	 * @return bool
 	 */
-	public function newer( array $answer ): bool {
-		if ( is_bool( $answer['update'] ?? null ) ) {
-			return $answer['update'];
+	public function newer( Release $release ): bool {
+		if ( null !== $release->update ) {
+			return $release->update;
 		}
 
-		return version_compare( $this->text( $answer, 'version', '' ), $this->updater->version(), '>' );
+		return version_compare( $release->version, $this->updater->version(), '>' );
 	}
 
 	/**
 	 * What WordPress is told about the newest version, or null when there
 	 * is nothing to tell.
 	 *
-	 * @param array $answer The store's answer.
+	 * @param Release $release The newest version.
 	 *
 	 * @return object|null
 	 */
-	public function update( array $answer ): ?object {
-		$version = $this->text( $answer, 'version', '' );
-
-		if ( '' === $version ) {
+	public function update( Release $release ): ?object {
+		if ( '' === $release->version ) {
 			return null;
 		}
 
 		$update = new stdClass();
 
-		$update->id            = '' !== $this->updater->update_host() ? $this->updater->header( 'UpdateURI' ) : $this->updater->config( 'store' ) . '#' . $this->updater->slug();
-		$update->slug          = $this->updater->slug();
-		$update->plugin        = $this->updater->basename();
-		$update->version       = $version;
-		$update->new_version   = $version;
-		$update->url           = esc_url_raw( $this->text( $answer, 'homepage', $this->homepage() ) );
-		$update->package       = $this->package( $answer );
-		$update->icons         = $this->images( $answer['icons'] ?? [] );
-		$update->banners       = $this->images( $answer['banners'] ?? [] );
-		$update->banners_rtl   = [];
-		$update->translations  = [];
-		$update->compatibility = new stdClass();
-
-		foreach ( self::TEXT as $key ) {
-			$update->{$key} = $this->text( $answer, $key, '' );
-		}
+		$update->id             = '' !== $this->updater->update_host() ? $this->updater->header( 'UpdateURI' ) : $this->updater->config( 'store' ) . '#' . $this->updater->slug();
+		$update->slug           = $this->updater->slug();
+		$update->plugin         = $this->updater->basename();
+		$update->version        = $release->version;
+		$update->new_version    = $release->version;
+		$update->url            = esc_url_raw( $this->either( $release->homepage, $this->homepage() ) );
+		$update->package        = $release->package;
+		$update->icons          = $release->icons;
+		$update->banners        = $release->banners;
+		$update->banners_rtl    = [];
+		$update->translations   = [];
+		$update->compatibility  = new stdClass();
+		$update->requires       = $release->requires;
+		$update->tested         = $release->tested;
+		$update->requires_php   = $release->requires_php;
+		$update->last_updated   = $release->last_updated;
+		$update->upgrade_notice = '' !== $release->upgrade_notice ? wp_kses_post( $release->upgrade_notice ) : '';
 
 		/**
 		 * Filter what WordPress is told about a new version.
@@ -222,28 +217,14 @@ final class Updates {
 	}
 
 	/**
-	 * The store's answer, or null when there is none to use.
+	 * The newest version, or null when there is none to use.
 	 *
-	 * @return array|null
+	 * @return Release|null
 	 */
-	private function answer(): ?array {
-		$answer = $this->updater->latest();
+	private function answer(): ?Release {
+		$answer = $this->updater->release();
 
-		return is_array( $answer ) ? $answer : null;
-	}
-
-	/**
-	 * The download link: the store's signed one, or nothing.
-	 *
-	 * A licence that is good but has no file to give still hears there is
-	 * a new version; WordPress says it cannot update it automatically.
-	 *
-	 * @param array $answer The store's answer.
-	 *
-	 * @return string
-	 */
-	private function package( array $answer ): string {
-		return is_string( $answer['package'] ?? null ) ? esc_url_raw( $answer['package'] ) : '';
+		return is_wp_error( $answer ) ? null : $answer->release;
 	}
 
 	/**
@@ -254,11 +235,11 @@ final class Updates {
 	 * Any `sections` the store sends are HTML, and take the place of the
 	 * ones here with the same name.
 	 *
-	 * @param array $answer The store's answer.
+	 * @param Release $release The newest version.
 	 *
 	 * @return array<string, string>
 	 */
-	private function sections( array $answer ): array {
+	private function sections( Release $release ): array {
 		$sections    = [];
 		$description = '' !== $this->updater->config( 'description' ) ? $this->updater->config( 'description' ) : $this->updater->header( 'Description' );
 
@@ -266,42 +247,15 @@ final class Updates {
 			$sections['description'] = wpautop( wp_kses_post( $description ) );
 		}
 
-		foreach ( (array) ( $answer['sections'] ?? [] ) as $name => $html ) {
-			$name = sanitize_key( (string) $name );
-
-			if ( '' !== $name && is_string( $html ) && '' !== trim( $html ) ) {
-				$sections[ $name ] = wp_kses_post( $html );
-			}
+		foreach ( $release->sections as $name => $html ) {
+			$sections[ $name ] = wp_kses_post( $html );
 		}
 
-		$changelog = $this->text( $answer, 'changelog', '' );
-
-		if ( ! isset( $sections['changelog'] ) && '' !== trim( $changelog ) ) {
-			$sections['changelog'] = wpautop( esc_html( $changelog ) );
+		if ( ! isset( $sections['changelog'] ) && '' !== $release->changelog ) {
+			$sections['changelog'] = wpautop( esc_html( $release->changelog ) );
 		}
 
 		return $sections;
-	}
-
-	/**
-	 * Banners or icons, by size, as addresses.
-	 *
-	 * @param mixed $images As the store sent them.
-	 *
-	 * @return array<string, string>
-	 */
-	private function images( mixed $images ): array {
-		$clean = [];
-
-		foreach ( (array) $images as $size => $url ) {
-			$url = is_string( $url ) ? esc_url_raw( $url ) : '';
-
-			if ( '' !== $url ) {
-				$clean[ sanitize_key( (string) $size ) ] = $url;
-			}
-		}
-
-		return $clean;
 	}
 
 	/**
@@ -316,17 +270,14 @@ final class Updates {
 	}
 
 	/**
-	 * One text value from the store's answer.
+	 * A value from the store, or what to use without one.
 	 *
-	 * @param array  $answer   The answer.
-	 * @param string $key      The key.
-	 * @param string $fallback When it is missing or empty.
+	 * @param string $value    The store's.
+	 * @param string $fallback When it is empty.
 	 *
 	 * @return string
 	 */
-	private function text( array $answer, string $key, string $fallback ): string {
-		$value = $answer[ $key ] ?? null;
-
-		return is_scalar( $value ) && '' !== trim( (string) $value ) ? trim( (string) $value ) : $fallback;
+	private function either( string $value, string $fallback ): string {
+		return '' !== $value ? $value : $fallback;
 	}
 }
